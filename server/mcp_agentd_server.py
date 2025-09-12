@@ -219,90 +219,11 @@ def tmux_run(
     return {"token": token}
 
 
-@app.tool()
-def tmux_bootstrap(session: Optional[str] = None, window: Optional[str] = None, cmd: Optional[str] = None, key: Optional[str] = None) -> dict:
-    t = _ensure_bootstrap(session=session, window=window, cmd=cmd)
-    if key and t:
-        p = _bin("agentd-target")
-        if p.exists():
-            import subprocess
-            subprocess.run([str(p), "set", key, t], check=False)
-    return {"target": t}
-
-
-@app.tool()
-def tmux_get_target(key: Optional[str] = None) -> dict:
-    if key:
-        p = AGENTD_DIR / "targets" / f"{key}.pane"
-        return {"target": _read_text(p, fallback="")}
-    return {"target": _read_target()}
-
-
-@app.tool()
-def tmux_set_target(target: str, key: Optional[str] = None) -> dict:
-    if not target:
-        raise ValueError("target required")
-    if not _tmux_pane_exists(target):
-        raise RuntimeError(f"tmux pane not found: {target}")
-    if key:
-        tf = AGENTD_DIR / "targets" / f"{key}.pane"
-        tf.parent.mkdir(parents=True, exist_ok=True)
-        tf.write_text(target)
-    else:
-        tf = _target_file()
-        tf.parent.mkdir(parents=True, exist_ok=True)
-        tf.write_text(target)
-    return {"target": target}
-
-
-@app.tool()
-def tmux_list_targets() -> dict:
-    out: Dict[str, str] = {}
-    default = _read_target()
-    if default:
-        out["default"] = default
-    tdir = AGENTD_DIR / "targets"
-    if tdir.exists():
-        for p in tdir.glob("*.pane"):
-            out[p.stem] = _read_text(p, "")
-    return out
-
-
-@app.tool()
-def tmux_status(token: Optional[str] = None) -> dict:
-    """Get status for a token or all tokens if omitted."""
-    if token:
-        return _job_status(token)
-    return {t: _job_status(t) for t in _list_job_tokens()}
-
-
-@app.tool()
-def tmux_logs(token: str, tail: Optional[int] = None) -> dict:
-    """Get logs for a token. Optionally limit to last N lines."""
-    log_path = _job_log_path(token)
-    if not log_path.exists():
-        return {"token": token, "log": "", "exists": False}
-    text = _read_text(log_path)
-    if tail is not None and tail > 0:
-        lines = text.splitlines()
-        text = "\n".join(lines[-tail:])
-    return {"token": token, "exists": True, "log": text}
-
-
-@app.tool()
-def tmux_stop(token: str) -> dict:
-    """Stop a job window by token using job-stop."""
-    repo_bin = Path(__file__).resolve().parents[1] / "bin"
-    job_stop = repo_bin / "job-stop"
-    if not job_stop.exists():
-        raise RuntimeError(f"job-stop not found at {job_stop}")
-    import subprocess
-    env = os.environ.copy()
-    env.setdefault("AGENTD_SESSION", SESSION)
-    res = subprocess.run([str(job_stop), token], capture_output=True, text=True, env=env)
-    ok = res.returncode == 0
-    out = res.stdout + res.stderr
-    return {"ok": ok, "output": out.strip()}
+"""
+Note: For Self専用ミニマム運用のため、公開ツールは tmux.run のみ。
+ログや状態はファイル（mcp_log/ や ~/.agentd/）で確認できます。
+必要になれば tmux.status / tmux.logs / tmux.stop を再度公開してください。
+"""
 
 
 
