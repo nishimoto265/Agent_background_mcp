@@ -66,6 +66,7 @@ launcher="$run_dir/$token.launch.sh"
 cat >"$launcher" <<EOF
 #!/usr/bin/env bash
 echo "LAUNCHER start \\$(date -Is) uid=\\$UID shell=\\$SHELL" >> "$run_dir/$token.exec.log"
+"$(command -v tmux || echo tmux)" wait-for "$token.pipe"
 exec "$runner"
 EOF
 chmod +x "$launcher"
@@ -170,6 +171,9 @@ tmux new-window -d -t "$VIEW_SESSION" -n "$token" \
   echo "view (outside tmux): tmux attach -t '$VIEW_SESSION' \; select-window -t '$VIEW_SESSION:$token'"
   echo "view (inside tmux):  tmux select-window -t '$VIEW_SESSION:$token'"
 } >&2
+
+# Signal launcher that pipe is attached; safe to start the runner command
+tmux run-shell "tmux wait-for -S '$token.pipe'"
 
 # Note: Do not send the attach command to the pane. We only print
 # copyable hints to stderr above; users/MCP clients surface commands.

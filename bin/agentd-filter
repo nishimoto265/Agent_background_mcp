@@ -27,6 +27,10 @@ mkdir -p -- "$(dirname -- "$LOGFILE")"
 
 # Read line-by-line without mangling
 while IFS= read -r line; do
+  # Normalize: strip a single trailing CR (tmux may emit \r)
+  case "$line" in
+    *$'\r') line=${line%$'\r'} ;;
+  esac
   if [[ $line == "[notify]"* ]]; then
     msg=${line#"[notify]"}
     msg=${msg# }   # strip one leading space if present
