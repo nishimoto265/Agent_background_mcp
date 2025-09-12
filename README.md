@@ -22,7 +22,7 @@ git clone https://github.com/nishimoto265/Agent_background_mcp.git
 cd Agent_background_mcp
 ```
 
-次に、MCPクライアントに本サーバを登録します（クライアントが必要時に自動起動します）。
+次に、MCPクライアントに本サーバを登録します。
 
 - 基本（標準）
   - 依存が未導入なら（必要な人だけ）:
@@ -69,7 +69,7 @@ claude mcp add --scope project agentd /absolute/path/to/repo/bin/mcp-agentd
 MCP設定から「ローカルSTDIOサーバ」を追加:
 - Name: `agentd`
 - Command: `/absolute/path/to/repo/bin/mcp-agentd`
-- Args: （空）
+- Args: （）
 
 ## How to use（tmux上で運用）
 1) tmuxを起動/アタッチ（例: `tmux new -s mywork`）
@@ -85,5 +85,5 @@ MCP設定から「ローカルSTDIOサーバ」を追加:
 
 ## Notes（ログ/終了コード）
 - 終了コード: `~/.agentd/<token>.rc`
-- ログ: 「コマンドを実行した作業ディレクトリ」の `mcp_log/<token>.log`（書けない場合はリポ直下→`~/.agentd/logs`へ自動フォールバック）
+- ログ: `~/.agentd/logs/<token>.log`
 - 宛先（Self）記録: `~/.agentd/<token>.target`
