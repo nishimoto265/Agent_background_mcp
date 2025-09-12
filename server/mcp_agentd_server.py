@@ -277,7 +277,13 @@ def tmux_run(
     env.setdefault("AGENTD_SESSION", SESSION)
     import subprocess
     args = [str(job_run), cmd]
-    # Priority: explicit target > session/window/pane > AUTO > SELF_PANE
+    # Priority (AUTO first when no explicit target):
+    #   1) explicit target parameter
+    #   2) explicit session/window/pane
+    #   3) saved agent pane (~/.agentd/agent_pane)
+    #   4) AUTO recent session (cli.0)
+    #   5) SELF_PANE (server launched inside tmux)
+    #   6) default SESSION:CLI_WINDOW.0
     if target:
         env["JOB_TARGET_PANE"] = target
     elif session:
