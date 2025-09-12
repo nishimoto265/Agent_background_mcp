@@ -10,11 +10,11 @@ set -Euo pipefail
 _COMMON_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 _REPO_DIR=$(cd -- "${_COMMON_DIR}/.." && pwd)
 
-# ログ保存先の既定を「実行ディレクトリの mcp_log」に。
-# 書き込み不可の場合はリポ直下、最後に ~/.agentd/logs へフォールバック。
+# ログ保存先の既定を「~/.agentd/logs」を最優先に。
+# つぎにリポ直下mcp_log、最後に実行ディレクトリmcp_logへフォールバック。
 : "${AGENTD_LOGDIR:=}"
 if [[ -z "${AGENTD_LOGDIR}" ]]; then
-  for d in "${PWD}/mcp_log" "${_REPO_DIR}/mcp_log" "${HOME}/.agentd/logs"; do
+  for d in "${HOME}/.agentd/logs" "${_REPO_DIR}/mcp_log" "${PWD}/mcp_log"; do
     if mkdir -p "$d" 2>/dev/null; then AGENTD_LOGDIR="$d"; break; fi
   done
 fi
