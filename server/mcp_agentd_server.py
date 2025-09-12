@@ -277,8 +277,7 @@ def tmux_run(
 
     env = os.environ.copy()
     env.setdefault("AGENTD_SESSION", SESSION)
-    # Ensure logs go to a stable location so clients can tail reliably
-    env.setdefault("AGENTD_LOGDIR", str(LOG_DIR))
+    # Do not force a global log dir here; job-run will prefer the target pane's cwd/mcp_log.
     # Viewer session to safely attach without stealing the user's current shell
     VIEW_SESSION = env.setdefault("AGENTD_VIEW_SESSION", os.environ.get("AGENTD_VIEW_SESSION", "agentview"))
     import subprocess
@@ -326,7 +325,18 @@ def tmux_run(
     env.setdefault("JOB_SESSION", session_name)
     # Execute job-run and capture token
     # Compute useful view commands before launching
-    log_path = str(LOG_DIR / f"{token}.log")
+    # Try to predict log path using the target pane's cwd
+    log_dir_guess = None
+    target_pane = env.get("JOB_TARGET_PANE")
+    if target_pane:
+        try:
+            import subprocess as _sp
+            cwd = _sp.run(["tmux", "display-message", "-p", "-t", target_pane, "#{pane_current_path}"], capture_output=True, text=True, check=True).stdout.strip()
+            if cwd:
+                log_dir_guess = str(Path(cwd) / "mcp_log")
+        except Exception:
+            log_dir_guess = None
+    log_path = str(Path(log_dir_guess or str(LOG_DIR)) / f"{token}.log")
     # Prefer viewing via the dedicated viewer session (job window is linked there by job-run)
     inside_cmd = f"tmux select-window -t '{VIEW_SESSION}:{token}'"
     outside_cmd = f"tmux attach -t '{VIEW_SESSION}' \\; select-window -t '{VIEW_SESSION}:{token}'"

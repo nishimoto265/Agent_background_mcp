@@ -31,7 +31,6 @@ cmd_string=$1
 token=${JOB_TOKEN:-job-$(date +%Y%m%d%H%M%S)-$(agentd_rand)}
 run_dir="$AGENTD_DIR/run"; mkdir -p "$run_dir"
 rc_file="$AGENTD_DIR/$token.rc"
-log_file="$AGENTD_LOGDIR/$token.log"
 runner="$run_dir/$token.sh"
 tmux_bin=$(command -v tmux || echo tmux)
 
@@ -94,6 +93,14 @@ fi
 if [[ -z "$job_session" ]]; then
   job_session="$AGENTD_SESSION"
 fi
+
+# Decide log directory based on target pane's current path if not explicitly set
+if [[ -z "${AGENTD_LOGDIR:-}" ]]; then
+  pane_cwd=$(tmux display-message -p -t "$resolved_target" '#{pane_current_path}' 2>/dev/null || printf '%s' "$PWD")
+  AGENTD_LOGDIR="$pane_cwd/mcp_log"
+fi
+mkdir -p "$AGENTD_LOGDIR" 2>/dev/null || true
+log_file="$AGENTD_LOGDIR/$token.log"
 
 # Ensure the job session exists and set remain-on-exit before creating the window
 if ! tmux has-session -t "$job_session" 2>/dev/null; then
