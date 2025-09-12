@@ -196,10 +196,17 @@ def tmux_run(
     env.setdefault("AGENTD_SESSION", SESSION)
     import subprocess
     args = [str(job_run), cmd]
-    # Self-only default for MCP: always send back to the server's own pane if available
-    if not SELF_PANE:
-        raise RuntimeError("Self-only: MCP server must run inside tmux")
-    env["JOB_TARGET_PANE"] = SELF_PANE
+    # Priority: explicit target > session/window/pane > SELF_PANE
+    if target:
+        env["JOB_TARGET_PANE"] = target
+    elif session:
+        w = window or os.environ.get("AGENTD_CLI_WINDOW", CLI_WINDOW)
+        p = pane if pane is not None else 0
+        env["JOB_TARGET_PANE"] = f"{session}:{w}.{p}"
+    elif SELF_PANE:
+        env["JOB_TARGET_PANE"] = SELF_PANE
+    else:
+        raise RuntimeError("Self-only: MCP server must run inside tmux, or pass target/session explicitly")
     # Execute job-run and capture token
     res = subprocess.run(
         args,
