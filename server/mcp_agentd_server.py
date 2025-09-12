@@ -279,6 +279,8 @@ def tmux_run(
     env.setdefault("AGENTD_SESSION", SESSION)
     # Ensure logs go to a stable location so clients can tail reliably
     env.setdefault("AGENTD_LOGDIR", str(LOG_DIR))
+    # Viewer session to safely attach without stealing the user's current shell
+    VIEW_SESSION = env.setdefault("AGENTD_VIEW_SESSION", os.environ.get("AGENTD_VIEW_SESSION", "agentview"))
     import subprocess
     # Pre-generate a token so we can surface it (and log commands) immediately
     ts = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -325,8 +327,9 @@ def tmux_run(
     # Execute job-run and capture token
     # Compute useful view commands before launching
     log_path = str(LOG_DIR / f"{token}.log")
-    inside_cmd = f"tmux select-window -t '{session_name}:{token}'"
-    outside_cmd = f"tmux attach -t '{session_name}' \\; select-window -t '{session_name}:{token}'"
+    # Prefer viewing via the dedicated viewer session (job window is linked there by job-run)
+    inside_cmd = f"tmux select-window -t '{VIEW_SESSION}:{token}'"
+    outside_cmd = f"tmux attach -t '{VIEW_SESSION}' \\; select-window -t '{VIEW_SESSION}:{token}'"
     tail_cmd = f"tail -f '{log_path}'"
 
     # Launch the job in the background (non-blocking for the MCP tool)
@@ -342,6 +345,7 @@ def tmux_run(
     return {
         "token": token,
         "session": session_name,
+        "view_session": VIEW_SESSION,
         "target": env.get("JOB_TARGET_PANE"),
         "log_path": log_path,
         "attach": outside_cmd,

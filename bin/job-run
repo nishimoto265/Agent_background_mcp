@@ -139,10 +139,22 @@ if [[ $pipe_ok -ne 1 ]]; then
   echo "PIPE_ATTACH_FAILED $token target=${pane_id:-$win_id} log=$log_file" >>"$run_dir/$token.exec.log"
 fi
 
+# Link the job window into a dedicated viewer session so users can attach there safely
+VIEW_SESSION=${AGENTD_VIEW_SESSION:-agentview}
+if ! tmux has-session -t "$VIEW_SESSION" 2>/dev/null; then
+  tmux new-session -d -s "$VIEW_SESSION" -n cli 'bash -lc "exec bash -i"'
+fi
+# Link using window-id to avoid name races; name the linked window as token
+if [[ -n "$win_id" ]]; then
+  tmux link-window -k -s "$win_id" -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || \
+  tmux link-window    -s "$win_id" -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || true
+  tmux set-window-option -t "$VIEW_SESSION:$token" remain-on-exit on >/dev/null 2>&1 || true
+fi
+
 # 提示: 実行中のジョブ画面をすぐ見たい場合のtmuxコマンド（stderrに表示）
 {
-  echo "view (outside tmux): tmux attach -t '$job_session' \; select-window -t '$job_session:$token'"
-  echo "view (inside tmux):  tmux select-window -t '$job_session:$token'"
+  echo "view (outside tmux): tmux attach -t '$VIEW_SESSION' \; select-window -t '$VIEW_SESSION:$token'"
+  echo "view (inside tmux):  tmux select-window -t '$VIEW_SESSION:$token'"
 } >&2
 
 # Note: Do not send the attach command to the pane. We only print
