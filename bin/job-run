@@ -151,6 +151,13 @@ if [[ -n "$win_id" ]]; then
   tmux set-window-option -t "$VIEW_SESSION:$token" remain-on-exit on >/dev/null 2>&1 || true
 fi
 
+# Additionally, spawn a viewer window that tails the job log (works even if link-window fails)
+if tmux list-windows -t "$VIEW_SESSION" -F '#{window_name}' 2>/dev/null | grep -Fxq "$token"; then
+  tmux kill-window -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || true
+fi
+tmux new-window -d -t "$VIEW_SESSION" -n "$token" \
+  "bash -lc 'printf \"tailing %s\\n\" \"$log_file\"; i=0; while [ ! -s \"$log_file\" ] && [ \"$i\" -lt 50 ]; do sleep 0.1; i=$((i+1)); done; tail -n +1 -f \"$log_file\"'" >/dev/null 2>&1 || true
+
 # 提示: 実行中のジョブ画面をすぐ見たい場合のtmuxコマンド（stderrに表示）
 {
   echo "view (outside tmux): tmux attach -t '$VIEW_SESSION' \; select-window -t '$VIEW_SESSION:$token'"
