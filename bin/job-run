@@ -109,15 +109,37 @@ rcf_arg=$(printf '%q' "$rc_file")
 tok_arg=$(printf '%q' "$token")
 sess_arg=$(printf '%q' "$job_session")
 tmux new-window -d -t "$job_session" -n "$token" "bash $launcher"
-# Record window index for reliable attach later
-win_idx=$(tmux display-message -p -t "$job_session:$token" '#{window_index}' 2>/dev/null || true)
-if [[ -n "$win_idx" ]]; then
-  echo "$win_idx" >"$AGENTD_DIR/$token.win"
-fi
+# Record window index and pane/window ids for reliable attach later
+win_idx=""; win_id=""; pane_id=""
+for i in 1 2 3 4 5; do
+  win_idx=$(tmux display-message -p -t "$job_session:$token" '#{window_index}' 2>/dev/null || true)
+  win_id=$(tmux display-message -p -t "$job_session:$token" '#{window_id}' 2>/dev/null || true)
+  pane_id=$(tmux list-panes -t "$job_session:$token" -F '#{pane_id}' 2>/dev/null | head -n1 || true)
+  [[ -n "$win_idx" && -n "$win_id" && -n "$pane_id" ]] && break
+  sleep 0.05
+done
+if [[ -n "$win_idx" ]]; then echo "$win_idx" >"$AGENTD_DIR/$token.win"; fi
+if [[ -n "$win_id" ]]; then echo "$win_id" >"$AGENTD_DIR/$token.wid"; fi
+if [[ -n "$pane_id" ]]; then echo "$pane_id" >"$AGENTD_DIR/$token.pid"; fi
 
-# Attach logging/notify pipe (idempotent with -o) using absolute path
+# Attach logging/notify pipe (idempotent with -o) to the pane id; retry briefly to avoid race
 FILTER_CMD="$SCRIPT_DIR/agentd-filter"
-tmux pipe-pane -t "$job_session:$token" -o "bash -lc 'exec \"$FILTER_CMD\" \"$log_file\"'"
+pipe_ok=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if [[ -n "$pane_id" ]]; then
+    if tmux pipe-pane -t "$pane_id" -o "bash -lc 'exec \"$FILTER_CMD\" \"$log_file\"'" >/dev/null 2>&1; then
+      pipe_ok=1; break
+    fi
+  elif [[ -n "$win_id" ]]; then
+    if tmux pipe-pane -t "$win_id" -o "bash -lc 'exec \"$FILTER_CMD\" \"$log_file\"'" >/dev/null 2>&1; then
+      pipe_ok=1; break
+    fi
+  fi
+  sleep 0.1
+done
+if [[ $pipe_ok -ne 1 ]]; then
+  echo "PIPE_ATTACH_FAILED $token target=${pane_id:-$win_id} log=$log_file" >>"$run_dir/$token.exec.log"
+fi
 
 # 提示: 実行中のジョブ画面をすぐ見たい場合のtmuxコマンド（stderrに表示）
 {
