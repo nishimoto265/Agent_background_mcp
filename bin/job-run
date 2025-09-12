@@ -105,6 +105,9 @@ rcf_arg=$(printf '%q' "$rc_file")
 tok_arg=$(printf '%q' "$token")
 sess_arg=$(printf '%q' "$job_session")
 tmux new-window -d -t "$job_session" -n "$token" "bash '$launcher'"
+# Keep the job window visible after the command exits for easier inspection
+tmux set-window-option -t "$job_session:$token" remain-on-exit on >/dev/null 2>&1 || \
+tmux set-option -t "$job_session:$token" remain-on-exit on >/dev/null 2>&1 || true
 
 # Attach logging/notify pipe (idempotent with -o) using absolute path
 FILTER_CMD="$SCRIPT_DIR/agentd-filter"
