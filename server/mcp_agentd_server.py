@@ -6,6 +6,8 @@ import re
 import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+import secrets
+import datetime as _dt
 
 from mcp.server.fastmcp import FastMCP
 
@@ -275,7 +277,15 @@ def tmux_run(
 
     env = os.environ.copy()
     env.setdefault("AGENTD_SESSION", SESSION)
+    # Ensure logs go to a stable location so clients can tail reliably
+    env.setdefault("AGENTD_LOGDIR", str(LOG_DIR))
     import subprocess
+    # Pre-generate a token so we can surface it (and log commands) immediately
+    ts = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
+    tok_suffix = secrets.token_hex(3)  # 6 hex chars like agentd_rand
+    token = f"job-{ts}-{tok_suffix}"
+    env["JOB_TOKEN"] = token
+
     args = [str(job_run), cmd]
     # Priority (AUTO first when no explicit target):
     #   1) explicit target parameter
@@ -286,33 +296,59 @@ def tmux_run(
     #   6) default SESSION:CLI_WINDOW.0
     if target:
         env["JOB_TARGET_PANE"] = target
+        session_name = target.split(":", 1)[0] if ":" in target else (session or SESSION)
     elif session:
         w = window or os.environ.get("AGENTD_CLI_WINDOW", CLI_WINDOW)
         p = pane if pane is not None else 0
+        session_name = session
         env["JOB_TARGET_PANE"] = f"{session}:{w}.{p}"
     else:
         saved = _read_target()
         if saved and _tmux_pane_exists(saved):
             env["JOB_TARGET_PANE"] = saved
+            session_name = saved.split(":", 1)[0]
         else:
             auto = _auto_session()
             if auto:
+                session_name = auto
                 env["JOB_TARGET_PANE"] = f"{auto}:{CLI_WINDOW}.0"
             elif SELF_PANE:
+                session_name = SELF_PANE.split(":", 1)[0]
                 env["JOB_TARGET_PANE"] = SELF_PANE
             else:
                 # Fall back to default session name; job-run will create if needed
+                session_name = SESSION
                 env["JOB_TARGET_PANE"] = f"{SESSION}:{CLI_WINDOW}.0"
+
+    # Hint job-run which session to create the window in
+    env.setdefault("JOB_SESSION", session_name)
     # Execute job-run and capture token
-    res = subprocess.run(
+    # Compute useful view commands before launching
+    log_path = str(LOG_DIR / f"{token}.log")
+    inside_cmd = f"tmux select-window -t '{session_name}:{token}'"
+    outside_cmd = f"tmux attach -t '{session_name}' \\; select-window -t '{session_name}:{token}'"
+    tail_cmd = f"tail -f '{log_path}'"
+
+    # Launch the job (non-blocking; job-run returns immediately after scheduling)
+    subprocess.run(
         args,
         check=True,
         capture_output=True,
         text=True,
         env=env,
     )
-    token = res.stdout.strip().splitlines()[-1].strip()
-    return {"token": token}
+
+    return {
+        "token": token,
+        "session": session_name,
+        "target": env.get("JOB_TARGET_PANE"),
+        "log_path": log_path,
+        "view": {
+            "tail": tail_cmd,
+            "tmux_inside": inside_cmd,
+            "tmux_outside": outside_cmd,
+        },
+    }
 
 
 """
