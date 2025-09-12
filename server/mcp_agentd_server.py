@@ -329,13 +329,14 @@ def tmux_run(
     outside_cmd = f"tmux attach -t '{session_name}' \\; select-window -t '{session_name}:{token}'"
     tail_cmd = f"tail -f '{log_path}'"
 
-    # Launch the job (non-blocking; job-run returns immediately after scheduling)
-    subprocess.run(
+    # Launch the job in the background (non-blocking for the MCP tool)
+    import subprocess as _sp
+    _sp.Popen(
         args,
-        check=True,
-        capture_output=True,
-        text=True,
         env=env,
+        stdout=_sp.DEVNULL,
+        stderr=_sp.DEVNULL,
+        start_new_session=True,
     )
 
     return {
@@ -343,6 +344,7 @@ def tmux_run(
         "session": session_name,
         "target": env.get("JOB_TARGET_PANE"),
         "log_path": log_path,
+        "attach": outside_cmd,
         "view": {
             "tail": tail_cmd,
             "tmux_inside": inside_cmd,
