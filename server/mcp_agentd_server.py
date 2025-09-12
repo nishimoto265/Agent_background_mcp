@@ -291,14 +291,18 @@ def tmux_run(
         p = pane if pane is not None else 0
         env["JOB_TARGET_PANE"] = f"{session}:{w}.{p}"
     else:
-        auto = _auto_session()
-        if auto:
-            env["JOB_TARGET_PANE"] = f"{auto}:{CLI_WINDOW}.0"
-        elif SELF_PANE:
-            env["JOB_TARGET_PANE"] = SELF_PANE
+        saved = _read_target()
+        if saved and _tmux_pane_exists(saved):
+            env["JOB_TARGET_PANE"] = saved
         else:
-            # Fall back to default session name; job-run will create if needed
-            env["JOB_TARGET_PANE"] = f"{SESSION}:{CLI_WINDOW}.0"
+            auto = _auto_session()
+            if auto:
+                env["JOB_TARGET_PANE"] = f"{auto}:{CLI_WINDOW}.0"
+            elif SELF_PANE:
+                env["JOB_TARGET_PANE"] = SELF_PANE
+            else:
+                # Fall back to default session name; job-run will create if needed
+                env["JOB_TARGET_PANE"] = f"{SESSION}:{CLI_WINDOW}.0"
     # Execute job-run and capture token
     res = subprocess.run(
         args,
