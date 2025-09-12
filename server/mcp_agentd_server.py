@@ -169,6 +169,87 @@ def _cli_pane_exists(session: str) -> bool:
     return _tmux_pane_exists(target)
 
 
+def _auto_session() -> Optional[str]:
+    """Pick an automatic session based on recent user activity.
+
+    Priority:
+      1) Most recently active tmux client session
+      2) Most recently attached session
+      3) Most recently created session
+    """
+    if not _tmux_ok():
+        return None
+    import subprocess
+    # 1) Most recently active client
+    try:
+        out = subprocess.run(
+            [
+                "tmux",
+                "list-clients",
+                "-F",
+                "#{client_activity} #{client_session}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
+        if lines:
+            sess = sorted(lines, key=lambda s: int(s.split()[0]), reverse=True)[0].split()[1]
+            if sess:
+                return sess
+    except Exception:
+        pass
+    # 2) Most recently attached session
+    try:
+        out = subprocess.run(
+            [
+                "tmux",
+                "list-sessions",
+                "-F",
+                "#{session_last_attached} #{session_name}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        pairs = []
+        for l in out.stdout.splitlines():
+            l = l.strip()
+            if not l:
+                continue
+            ts, name = l.split(maxsplit=1)
+            try:
+                tsv = int(ts)
+            except Exception:
+                continue
+            if tsv != -1:
+                pairs.append((tsv, name))
+        if pairs:
+            return sorted(pairs, key=lambda x: x[0], reverse=True)[0][1]
+    except Exception:
+        pass
+    # 3) Most recently created session
+    try:
+        out = subprocess.run(
+            [
+                "tmux",
+                "list-sessions",
+                "-F",
+                "#{session_created} #{session_name}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
+        if lines:
+            return sorted(lines, key=lambda s: int(s.split()[0]), reverse=True)[0].split()[1]
+    except Exception:
+        pass
+    return None
+
+
 @app.tool()
 def tmux_run(
     cmd: str,
@@ -196,7 +277,7 @@ def tmux_run(
     env.setdefault("AGENTD_SESSION", SESSION)
     import subprocess
     args = [str(job_run), cmd]
-    # Priority: explicit target > session/window/pane > SELF_PANE
+    # Priority: explicit target > session/window/pane > SELF_PANE > AUTO
     if target:
         env["JOB_TARGET_PANE"] = target
     elif session:
@@ -206,7 +287,12 @@ def tmux_run(
     elif SELF_PANE:
         env["JOB_TARGET_PANE"] = SELF_PANE
     else:
-        raise RuntimeError("Self-only: MCP server must run inside tmux, or pass target/session explicitly")
+        auto = _auto_session()
+        if auto:
+            env["JOB_TARGET_PANE"] = f"{auto}:{CLI_WINDOW}.0"
+        else:
+            # Fall back to default session name; job-run will create if needed
+            env["JOB_TARGET_PANE"] = f"{SESSION}:{CLI_WINDOW}.0"
     # Execute job-run and capture token
     res = subprocess.run(
         args,
