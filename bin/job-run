@@ -35,38 +35,41 @@ log_file="$AGENTD_LOGDIR/$token.log"
 runner="$run_dir/$token.sh"
 tmux_bin=$(command -v tmux || echo tmux)
 
-# Build runner script that accepts (cmd_string, rc_file, token) as args
-cat >"$runner" <<'RUN'
+# Build runner script with embedded parameters to avoid arg quoting issues
+q_cmd=$(printf '%q' "$cmd_string")
+q_rc=$(printf '%q' "$rc_file")
+q_tok=$(printf '%q' "$token")
+cat >"$runner" <<RUN
 #!/usr/bin/env bash
 set +e
-cmd_string=${1:?}
-rc_file=${2:?}
-token=${3:?}
-job_session=${4:-}
+cmd_string=$q_cmd
+rc_file=$q_rc
+token=$q_tok
 rc=0
 {
-  if [[ -n "${JOB_MAX_SEC:-}" && "${JOB_MAX_SEC:-0}" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
-    timeout -s TERM "${JOB_MAX_SEC}" bash -lc "$cmd_string"
+  if [[ -n "
+\${JOB_MAX_SEC:-}" && "\${JOB_MAX_SEC:-0}" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
+    timeout -s TERM "\${JOB_MAX_SEC}" bash -lc "\$cmd_string"
   else
-    bash -lc "$cmd_string"
+    bash -lc "\$cmd_string"
   fi
-} || rc=$?
-echo "$rc" > "$rc_file"
-__TMUX_BIN__ wait-for -S "$token"
-exit "$rc"
+} || rc=\$?
+echo "\$rc" > "\$rc_file"
+__TMUX_BIN__ wait-for -S "\$token"
+exit "\$rc"
 RUN
 sed -i -e "s#__TMUX_BIN__#$(printf '%s' "$tmux_bin" | sed 's/[\\&]/\\&/g')#g" "$runner"
 
 chmod +x "$runner"
 
-# Create a tiny launcher to avoid complex tmux quoting issues
+# Create a tiny launcher that just execs runner (no args needed)
 launcher="$run_dir/$token.launch.sh"
 cat >"$launcher" <<EOF
 #!/usr/bin/env bash
 exec >> "$run_dir/$token.exec.log" 2>&1
 echo "LAUNCHER start \\$(date -Is) uid=\\$UID shell=\\$SHELL"
 set -x
-exec "$runner" $(printf '%q ' "$cmd_string" "$rc_file" "$token" "$job_session")
+exec "$runner"
 EOF
 chmod +x "$launcher"
 
@@ -94,20 +97,23 @@ if [[ -z "$job_session" ]]; then
   job_session="$AGENTD_SESSION"
 fi
 
-# Ensure the job session exists so new-window succeeds
+# Ensure the job session exists and set remain-on-exit before creating the window
 if ! tmux has-session -t "$job_session" 2>/dev/null; then
   tmux new-session -d -s "$job_session" -n cli 'bash -lc "exec bash -i"'
 fi
+tmux set-option -t "$job_session" remain-on-exit on >/dev/null 2>&1 || true
 
 # Create new job window first with safe-quoted args
 cmd_arg=$(printf '%q' "$cmd_string")
 rcf_arg=$(printf '%q' "$rc_file")
 tok_arg=$(printf '%q' "$token")
 sess_arg=$(printf '%q' "$job_session")
-tmux new-window -d -t "$job_session" -n "$token" "bash '$launcher'"
-# Keep the job window visible after the command exits for easier inspection
-tmux set-window-option -t "$job_session:$token" remain-on-exit on >/dev/null 2>&1 || \
-tmux set-option -t "$job_session:$token" remain-on-exit on >/dev/null 2>&1 || true
+tmux new-window -d -t "$job_session" -n "$token" "bash $launcher"
+# Record window index for reliable attach later
+win_idx=$(tmux display-message -p -t "$job_session:$token" '#{window_index}' 2>/dev/null || true)
+if [[ -n "$win_idx" ]]; then
+  echo "$win_idx" >"$AGENTD_DIR/$token.win"
+fi
 
 # Attach logging/notify pipe (idempotent with -o) using absolute path
 FILTER_CMD="$SCRIPT_DIR/agentd-filter"
