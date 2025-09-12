@@ -116,9 +116,8 @@ tmux pipe-pane -t "$job_session:$token" -o "bash -lc 'exec \"$FILTER_CMD\" \"$lo
   echo "view (inside tmux):  tmux select-window -t '$job_session:$token'"
 } >&2
 
-# Send immediate start attachment command to the original CLI pane (no auto-enter)
-attach_cmd="tmux attach -t '$job_session' \\; select-window -t '$job_session:$token'"
-AGENTD_TARGET_PANE="$resolved_target" "$SCRIPT_DIR/agentd-send" --no-enter "$attach_cmd"
+# Note: Do not send the attach command to the pane. We only print
+# copyable hints to stderr above; users/MCP clients surface commands.
 
 # Wait for completion signal (with timeout), then send message and robust newline(s)
 # Keep rc/target files for post-mortem/MCP status reads
