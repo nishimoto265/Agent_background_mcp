@@ -22,13 +22,12 @@ git clone https://github.com/nishimoto265/Agent_background_mcp.git
 cd Agent_background_mcp
 ```
 
-次に、tmux上の“同じペイン”で「MCPサーバ」と「元のCLIエージェント」を起動します。
+次に、MCPクライアントに本サーバを登録します（クライアントが必要時に自動起動します）。
 
 - 基本（標準）
-  - 依存（必要なら。仮想環境は必須ではありません）:
+  - 依存が未導入なら（必要な人だけ）:
     - `pip install "mcp[cli]" watchfiles`
-  - MCPサーバ起動: `./bin/mcp-agentd` （バックグラウンド可: `./bin/mcp-agentd &`）
-  - 元のCLI起動: 例 `your-agent-cli --resume <thread-id>`
+  - 通知を受け取りたい tmux のペインで MCPクライアントを起動（例: `codex` / `claude`）。
 
 - 標準設定（多くのクライアントが受け付けるSTDIO定義）
   ```json
@@ -75,9 +74,7 @@ MCP設定から「ローカルSTDIOサーバ」を追加:
 ## How to use（tmux上で運用）
 1) tmuxを起動/アタッチ（例: `tmux new -s mywork`）
 
-2) 同じペインで起動
-- MCPサーバ: `./bin/mcp-agentd &`
-- 元CLI: 例 `your-agent-cli --resume <thread-id>`
+2) 通知を受けたいtmuxペインで、MCPクライアントを起動（例: `codex` / `claude`）
 
 3) ジョブ投入（Self専用: 送信先は常にこのペイン）
 - 即時終了の確認: `./bin/job-run ":"`
@@ -90,4 +87,3 @@ MCP設定から「ローカルSTDIOサーバ」を追加:
 - 終了コード: `~/.agentd/<token>.rc`
 - ログ: `~/.agentd/logs/<token>.log`
 - 宛先（Self）記録: `~/.agentd/<token>.target`
-
