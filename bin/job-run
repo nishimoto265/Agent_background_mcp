@@ -108,6 +108,12 @@ tmux new-window -d -t "$job_session" -n "$token" "bash '$launcher'"
 FILTER_CMD="$SCRIPT_DIR/agentd-filter"
 tmux pipe-pane -t "$job_session:$token" -o "bash -lc 'exec \"$FILTER_CMD\" \"$log_file\"'"
 
+# 提示: 実行中のジョブ画面をすぐ見たい場合のtmuxコマンド（stderrに表示）
+{
+  echo "view (outside tmux): tmux attach -t '$job_session' \; select-window -t '$job_session:$token'"
+  echo "view (inside tmux):  tmux select-window -t '$job_session:$token'"
+} >&2
+
 # Wait for completion signal (with timeout), then send message and robust newline(s)
 # Keep rc/target files for post-mortem/MCP status reads
 tmux run-shell "sh -lc '

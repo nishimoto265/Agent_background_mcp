@@ -4,8 +4,12 @@ set -Euo pipefail
 
 : "${AGENTD_SESSION:=agentd}"
 : "${AGENTD_DIR:=$HOME/.agentd}"
-: "${AGENTD_LOGDIR:=$AGENTD_DIR/logs}"
 : "${AGENTD_CLI_WINDOW:=cli}"
+
+# Resolve repository root (bin/ のひとつ上) を基準にmcp_logを既定化
+_COMMON_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+_REPO_DIR=$(cd -- "${_COMMON_DIR}/.." && pwd)
+: "${AGENTD_LOGDIR:=${_REPO_DIR}/mcp_log}"
 
 mkdir -p "$AGENTD_DIR" "$AGENTD_LOGDIR"
 

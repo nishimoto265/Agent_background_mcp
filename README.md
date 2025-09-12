@@ -85,5 +85,5 @@ MCP設定から「ローカルSTDIOサーバ」を追加:
 
 ## Notes（ログ/終了コード）
 - 終了コード: `~/.agentd/<token>.rc`
-- ログ: `~/.agentd/logs/<token>.log`
+- ログ: リポジトリ直下の `mcp_log/<token>.log`
 - 宛先（Self）記録: `~/.agentd/<token>.target`
