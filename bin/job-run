@@ -42,7 +42,14 @@ set +e
 cmd_string=${1:?}
 rc_file=${2:?}
 token=${3:?}
+job_session=${4:-}
 rc=0
+log_dir=${AGENTD_LOGDIR:-"$HOME/.agentd/logs"}
+log_path="$log_dir/$token.log"
+{
+  # Notify start with token and tail command so clients can attach immediately
+  echo "[notify] job $token start; tail: tail -f '$log_path'"
+}
 {
   if [[ -n "${JOB_MAX_SEC:-}" && "${JOB_MAX_SEC:-0}" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
     timeout -s TERM "${JOB_MAX_SEC}" bash -lc "$cmd_string"
@@ -65,7 +72,7 @@ cat >"$launcher" <<EOF
 exec >> "$run_dir/$token.exec.log" 2>&1
 echo "LAUNCHER start \\$(date -Is) uid=\\$UID shell=\\$SHELL"
 set -x
-exec "$runner" $(printf '%q ' "$cmd_string" "$rc_file" "$token")
+exec "$runner" $(printf '%q ' "$cmd_string" "$rc_file" "$token" "$job_session")
 EOF
 chmod +x "$launcher"
 
@@ -102,6 +109,7 @@ fi
 cmd_arg=$(printf '%q' "$cmd_string")
 rcf_arg=$(printf '%q' "$rc_file")
 tok_arg=$(printf '%q' "$token")
+sess_arg=$(printf '%q' "$job_session")
 tmux new-window -d -t "$job_session" -n "$token" "bash '$launcher'"
 
 # Attach logging/notify pipe (idempotent with -o) using absolute path
@@ -113,6 +121,9 @@ tmux pipe-pane -t "$job_session:$token" -o "bash -lc 'exec \"$FILTER_CMD\" \"$lo
   echo "view (outside tmux): tmux attach -t '$job_session' \; select-window -t '$job_session:$token'"
   echo "view (inside tmux):  tmux select-window -t '$job_session:$token'"
 } >&2
+
+# Send immediate start notification to the original CLI pane with tail command
+tmux run-shell "sh -lc 'AGENTD_TARGET_PANE=\"$resolved_target\" \"$SCRIPT_DIR/agentd-send\" \"[notify] job $token start; tail: tail -f \"$log_file\"\"'"
 
 # Wait for completion signal (with timeout), then send message and robust newline(s)
 # Keep rc/target files for post-mortem/MCP status reads
