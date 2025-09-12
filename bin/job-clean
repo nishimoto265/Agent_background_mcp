@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -Euo pipefail
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$SCRIPT_DIR/agentd-common"
+
+usage() {
+  cat <<USAGE
+usage: job-clean <token> [--remove-log]
+  Kills the tmux windows for the job (original session and viewer session),
+  and removes per-job metadata files under ~/.agentd.
+
+env:
+  AGENTD_VIEW_SESSION  viewer session name (default: agentview)
+USAGE
+}
+
+if [[ $# -lt 1 ]]; then usage; exit 2; fi
+
+token=$1; shift || true
+remove_log=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --remove-log|--rm-log) remove_log=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+VIEW_SESSION=${AGENTD_VIEW_SESSION:-agentview}
+
+rc_file="$AGENTD_DIR/$token.rc"
+target_file="$AGENTD_DIR/$token.target"
+win_file="$AGENTD_DIR/$token.win"
+wid_file="$AGENTD_DIR/$token.wid"
+pid_file="$AGENTD_DIR/$token.pid"
+log_file="$AGENTD_LOGDIR/$token.log"
+
+# Kill viewer window (by name)
+if tmux has-session -t "$VIEW_SESSION" 2>/dev/null; then
+  tmux kill-window -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || true
+fi
+
+# Kill original job window (prefer window-id, then session:name)
+wid=""; [[ -f "$wid_file" ]] && wid=$(cat "$wid_file") || true
+if [[ -n "$wid" ]]; then
+  tmux kill-window -t "$wid" >/dev/null 2>&1 || true
+else
+  sess=""; [[ -f "$target_file" ]] && sess=$(cut -d: -f1 "$target_file") || true
+  if [[ -n "$sess" ]]; then
+    tmux kill-window -t "$sess:$token" >/dev/null 2>&1 || true
+  fi
+fi
+
+# Remove metadata files
+rm -f -- "$rc_file" "$target_file" "$win_file" "$wid_file" "$pid_file" 2>/dev/null || true
+
+# Optionally remove log
+if [[ $remove_log -eq 1 ]]; then
+  rm -f -- "$log_file" 2>/dev/null || true
+fi
+
+echo "cleaned $token"
+

@@ -357,6 +357,30 @@ def tmux_run(
     }
 
 
+@app.tool()
+def tmux_stop(token: str, remove_log: bool = False) -> dict:
+    """Stop/cleanup a job by token: kill tmux windows and remove metadata files.
+
+    Args:
+        token: job token (e.g., 'job-2025...')
+        remove_log: also delete ~/.agentd/logs/<token>.log if True
+    Returns:
+        {"token": str, "cleaned": bool}
+    """
+    import subprocess
+    script = _bin("job-clean")
+    if not script.exists():
+        raise RuntimeError("job-clean not found")
+    args = [str(script), token]
+    if remove_log:
+        args.append("--remove-log")
+    try:
+        subprocess.run(args, check=True, capture_output=True, text=True)
+        return {"token": token, "cleaned": True}
+    except subprocess.CalledProcessError as e:
+        return {"token": token, "cleaned": False, "error": e.stderr or e.stdout}
+
+
 """
 Note: For Self専用ミニマム運用のため、公開ツールは tmux.run のみ。
 ログや状態はファイル（mcp_log/ や ~/.agentd/）で確認できます。
