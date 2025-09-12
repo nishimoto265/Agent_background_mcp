@@ -66,9 +66,7 @@ chmod +x "$runner"
 launcher="$run_dir/$token.launch.sh"
 cat >"$launcher" <<EOF
 #!/usr/bin/env bash
-exec >> "$run_dir/$token.exec.log" 2>&1
-echo "LAUNCHER start \\$(date -Is) uid=\\$UID shell=\\$SHELL"
-set -x
+echo "LAUNCHER start \\$(date -Is) uid=\\$UID shell=\\$SHELL" >> "$run_dir/$token.exec.log"
 exec "$runner"
 EOF
 chmod +x "$launcher"
