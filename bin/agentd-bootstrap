@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -Euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$SCRIPT_DIR/agentd-common"
+
+CLI_WIN=${AGENTD_CLI_WINDOW:-cli}
+CLI_CMD=${AGENTD_BOOT_CMD:-echo "[notify] agentd CLI ready"}
+
+usage() {
+  cat <<USAGE
+usage: agentd-bootstrap [-s session] [-w window] [-c 'cmd']
+  -s  tmux session name (default: $AGENTD_SESSION)
+  -w  window name for original CLI (default: $CLI_WIN)
+  -c  command to run in that window (default: interactive bash)
+USAGE
+}
+
+while getopts ":s:w:c:h" opt; do
+  case $opt in
+    s) AGENTD_SESSION=$OPTARG ;;
+    w) CLI_WIN=$OPTARG ;;
+    c) CLI_CMD=$OPTARG ;;
+    h) usage; exit 0 ;;
+    :) echo "Option -$OPTARG requires an argument." >&2; usage; exit 2 ;;
+    \?) echo "Unknown option: -$OPTARG" >&2; usage; exit 2 ;;
+  esac
+done
+
+require_tmux
+tmux start-server
+
+if ! tmux has-session -t "$AGENTD_SESSION" 2>/dev/null; then
+  # Wrap to keep the pane alive even if CLI_CMD exits
+  tmux new-session -d -s "$AGENTD_SESSION" -n "$CLI_WIN" bash -lc "$CLI_CMD; exec bash -i"
+else
+  # Ensure CLI window exists
+  if ! tmux list-windows -t "$AGENTD_SESSION" -F "#{window_name}" | grep -Fxq "$CLI_WIN"; then
+    tmux new-window -t "$AGENTD_SESSION" -n "$CLI_WIN" bash -lc "$CLI_CMD; exec bash -i"
+  fi
+fi
+
+# Give tmux a moment to settle
+sleep 0.05
+
+# Record target pane for send-keys (explicit name to avoid surprises)
+target="$AGENTD_SESSION:$CLI_WIN.0"
+if ! tmux list-panes -t "$target" >/dev/null 2>&1; then
+  echo "error: tmux target pane not found: $target" >&2
+  exit 1
+fi
+printf '%s\n' "$target" >"$AGENTD_DIR/agent_pane"
+echo "saved agent pane: $target"

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pipe helper: reads from stdin, appends all lines to given logfile,
+# and forwards lines starting with "[notify]" (prefix stripped) to agent-notify.
+set -Euo pipefail
+
+: "${AGENTD_DIR:=$HOME/.agentd}"
+# Prefer local agent-notify in repo bin over PATH; allow explicit override.
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+PREFERRED_NOTIFY=${AGENT_NOTIFY_BIN:-}
+if [[ -z "${PREFERRED_NOTIFY}" ]]; then
+  if [[ -x "$SCRIPT_DIR/agent-notify" ]]; then
+    PREFERRED_NOTIFY="$SCRIPT_DIR/agent-notify"
+  elif command -v agent-notify >/dev/null 2>&1; then
+    PREFERRED_NOTIFY="agent-notify"
+  else
+    PREFERRED_NOTIFY=""  # fallback to file logging
+  fi
+fi
+
+LOGFILE=${1:-}
+if [[ -z ${LOGFILE} ]]; then
+  echo "usage: agentd-filter <logfile>" >&2
+  exit 2
+fi
+
+mkdir -p -- "$(dirname -- "$LOGFILE")"
+
+# Read line-by-line without mangling
+while IFS= read -r line; do
+  if [[ $line == "[notify]"* ]]; then
+    msg=${line#"[notify]"}
+    msg=${msg# }   # strip one leading space if present
+    if [[ -n "${PREFERRED_NOTIFY}" ]]; then
+      "${PREFERRED_NOTIFY}" "$msg" || true
+    else
+      # Fallback: append to notify.log
+      ts=$(date -Is)
+      printf '%s %s\n' "$ts" "$msg" >>"$AGENTD_DIR/notify.log"
+    fi
+  else
+    printf '%s\n' "$line"
+  fi
+  # Persist full stream to logfile
+  printf '%s\n' "$line" >>"$LOGFILE"
+done

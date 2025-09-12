@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -Euo pipefail
+
+# Accept message via args or stdin
+if [[ $# -gt 0 ]]; then
+  msg="$*"
+else
+  msg=$(cat)
+fi
+
+: "${AGENTD_DIR:=$HOME/.agentd}"
+mkdir -p "$AGENTD_DIR"
+
+# 1) Custom command hook
+if [[ -n "${AGENT_NOTIFY_CMD:-}" ]]; then
+  # Split CMD by shell and pass message as single arg
+  "${AGENT_NOTIFY_CMD}" "$msg" && exit 0 || true
+fi
+
+# 2) Generic HTTP webhook (POST JSON {text})
+if [[ -n "${AGENT_NOTIFY_HTTP_URL:-}" ]]; then
+  json_escape() {
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - <<'PY' "$@"
+import json,sys
+print(json.dumps(" ".join(sys.argv[1:])))
+PY
+    elif command -v jq >/dev/null 2>&1; then
+      jq -Rn --arg s "$*" '$s' | jq -c .
+    else
+      printf '%s' "$*" | sed 's/"/\\"/g'
+    fi
+  }
+  payload=$(printf '{"text": %s}\n' "$(json_escape "$msg")")
+  curl -fsS -H 'Content-Type: application/json' -d "$payload" "$AGENT_NOTIFY_HTTP_URL" >/dev/null && exit 0 || true
+fi
+
+# 3) Fallback: append to notify.log and stderr echo
+ts=$(date -Is)
+printf '%s %s\n' "$ts" "$msg" | tee -a "$AGENTD_DIR/notify.log" >&2 >/dev/null

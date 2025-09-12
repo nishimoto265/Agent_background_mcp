@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+VENV_DIR=${VENV_DIR:-"$ROOT_DIR/.venv-mcp"}
+
+:
+
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  echo "error: venv not found at $VENV_DIR. Create with: python3 -m venv .venv-mcp && . .venv-mcp/bin/activate && pip install \"mcp[cli]\" watchfiles" >&2
+  exit 1
+fi
+
+exec "$VENV_DIR/bin/python" "$ROOT_DIR/server/mcp_agentd_server.py"

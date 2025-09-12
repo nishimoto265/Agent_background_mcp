@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -Euo pipefail
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$SCRIPT_DIR/agentd-common"
+
+submit_only=false
+msg=""
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    --submit-only|-s) submit_only=true; shift ;;
+  esac
+fi
+
+if [[ ${submit_only} == false ]]; then
+  msg=${1:-}
+  if [[ -z ${msg} ]]; then
+    echo "usage: agentd-send [--submit-only] '<message>'" >&2
+    exit 2
+  fi
+fi
+
+explicit_pane=${AGENTD_TARGET_PANE:-}
+resolve_target() {
+  local t=""
+  if [[ -n "$explicit_pane" ]]; then
+    t="$explicit_pane"
+  fi
+  if [[ -z "$t" ]]; then
+    t=$(agentd_self_pane)
+  fi
+  printf '%s' "$t"
+}
+
+target=$(resolve_target)
+if [[ -z ${target} ]]; then
+  echo "error: Self-only: could not resolve tmux pane. Run inside tmux or set AGENTD_TARGET_PANE." >&2
+  exit 1
+fi
+
+# Ensure target exists; minimal best-effort: if session exists but window absent, create window
+if ! tmux list-panes -t "$target" >/dev/null 2>/dev/null; then
+  sess=${target%%:*}
+  if [[ -n "$sess" ]] && tmux has-session -t "$sess" 2>/dev/null; then
+    agentd_ensure_cli_window "$sess"
+  fi
+fi
+
+# Resolve-only mode (print target and exit)
+if [[ "${AGENTD_RESOLVE_ONLY:-}" == "1" || "${1:-}" == "--resolve-only" ]]; then
+  printf '%s\n' "$target"
+  exit 0
+fi
+
+# Type message literally (if provided), then try multiple newline variants with spacing
+if [[ ${submit_only} == false ]]; then
+  tmux send-keys -t "$target" -l "$msg" || true
+  sleep 0.25
+fi
+default_seq=(Enter C-j Enter)
+extra_seq=${AGENTD_SEND_EXTRA_SEQ:-}
+for k in "${default_seq[@]}" ${extra_seq}; do
+  tmux send-keys -t "$target" $k || true
+  sleep 0.12
+done
+
+# Fallback: write CR directly to the pane's PTY
+tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null || true)
+if [[ -n ${tty} && -w ${tty} ]]; then
+  # Send CRLF to TTY as a hard fallback
+  printf '\r\n' >"$tty" 2>/dev/null || true
+fi
+
+exit 0

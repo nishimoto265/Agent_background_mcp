@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Common vars for agentd scripts
+set -Euo pipefail
+
+: "${AGENTD_SESSION:=agentd}"
+: "${AGENTD_DIR:=$HOME/.agentd}"
+: "${AGENTD_LOGDIR:=$AGENTD_DIR/logs}"
+: "${AGENTD_CLI_WINDOW:=cli}"
+
+mkdir -p "$AGENTD_DIR" "$AGENTD_LOGDIR"
+
+# util: random short token suffix
+agentd_rand() {
+  if command -v hexdump >/dev/null 2>&1; then
+    hexdump -n 3 -v -e '/1 "%02x"' /dev/urandom 2>/dev/null || printf "%06x" "$RANDOM"
+  else
+    printf "%06x" "$RANDOM"
+  fi
+}
+
+# util: check tmux presence early
+require_tmux() {
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "error: tmux not found in PATH" >&2
+    exit 127
+  fi
+}
+
+# util: tmux binary path
+agentd_tmux_bin() {
+  command -v tmux 2>/dev/null || echo tmux
+}
+
+# util: resolve self pane (session:win.pane) or empty
+agentd_self_pane() {
+  if [[ -n "${TMUX_PANE:-}" ]]; then
+    tmux display-message -p -t "$TMUX_PANE" '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null || true
+  else
+    echo ""
+  fi
+}
+
+# util: ensure a tmux session exists (no-op if present)
+agentd_ensure_session() {
+  local sess=${1:?}
+  tmux has-session -t "$sess" 2>/dev/null || tmux new-session -d -s "$sess" -n "$AGENTD_CLI_WINDOW" 'bash -lc "exec bash -i"'
+}
+
+# util: ensure CLI window exists in session
+agentd_ensure_cli_window() {
+  local sess=${1:?}
+  if ! tmux list-windows -t "$sess" -F '#{window_name}' | grep -Fxq "$AGENTD_CLI_WINDOW"; then
+    tmux new-window -t "$sess" -n "$AGENTD_CLI_WINDOW" 'bash -lc "exec bash -i"'
+  fi
+}

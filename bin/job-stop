@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -Euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$SCRIPT_DIR/agentd-common"
+
+usage(){ echo "usage: job-stop <token>"; }
+if [[ $# -ne 1 ]]; then usage; exit 2; fi
+token=$1
+
+require_tmux
+if tmux list-windows -t "$AGENTD_SESSION" -F '#{window_name}' | grep -Fxq "$token"; then
+  tmux kill-window -t "$AGENTD_SESSION:$token" || true
+  echo "stopped: $token"
+else
+  echo "no such job window: $AGENTD_SESSION:$token" >&2
+  exit 1
+fi
+
