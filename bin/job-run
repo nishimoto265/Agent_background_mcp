@@ -175,42 +175,7 @@ tmux run-shell "tmux wait-for -S '$token.pipe'"
 # Note: Do not send the attach command to the pane. We only print
 # copyable hints to stderr above; users/MCP clients surface commands.
 
-# Wait for completion signal via helper scripts to avoid fragile inline quoting
-notify_helper="$run_dir/$token.notify.sh"
-cat >"$notify_helper" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-token="$token"
-rc_file="$rc_file"
-resolved_target="$resolved_target"
-run_dir="$run_dir"
-script_dir="$SCRIPT_DIR"
-rc=255; [[ -f "$rc_file" ]] && rc=$(cat "$rc_file" || echo 255)
-nt="${JOB_NOTIFY_PANE:-}"
-if [[ -z "$nt" ]]; then nt="$resolved_target"; fi
-AGENTD_TARGET_PANE="$nt" "$script_dir/agentd-send" "[notify] job $token done rc=$rc timeout=${TO:-0}" || true
-ec=$?
-echo "NOTIFY to=$nt rc=$rc timeout=${TO:-0} agentd-send-rc=$ec" >> "$run_dir/$token.exec.log"
-EOF
-chmod +x "$notify_helper"
-
-notify_runner="$run_dir/$token.notify_runner.sh"
-cat >"$notify_runner" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-WAIT_SECS="${JOB_WAIT_SEC:-600}"
-TOK="$token"
-HELPER="$notify_helper"
-to=0
-if command -v timeout >/dev/null 2>&1; then
-  timeout "$WAIT_SECS" tmux wait-for "$TOK" || to=1
-else
-  tmux wait-for "$TOK" || to=1
-fi
-TO="$to" bash "$HELPER"
-EOF
-chmod +x "$notify_runner"
-
-tmux run-shell "bash '$notify_runner'"
+# Wait for completion signal and notify via external helper (robust against quoting)
+tmux run-shell "$SCRIPT_DIR/job-wait-notify '$token' '${JOB_WAIT_SEC:-600}' '$rc_file' '$resolved_target' '$run_dir' '$SCRIPT_DIR' '${JOB_NOTIFY_PANE:-}'"
 
 echo "$token"

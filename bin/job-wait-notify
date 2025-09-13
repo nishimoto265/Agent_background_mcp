@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Args: token wait_secs rc_file resolved_target run_dir script_dir notify_pane
+token=${1:?}
+WAIT_SECS=${2:-600}
+rc_file=${3:?}
+resolved_target=${4:?}
+run_dir=${5:?}
+script_dir=${6:?}
+notify_pane=${7:-}
+
+to=0
+if command -v timeout >/dev/null 2>&1; then
+  timeout "$WAIT_SECS" tmux wait-for "$token" || to=1
+else
+  tmux wait-for "$token" || to=1
+fi
+
+rc=255
+if [[ -f "$rc_file" ]]; then
+  rc=$(cat "$rc_file" 2>/dev/null || echo 255)
+fi
+
+nt="$notify_pane"
+if [[ -z "$nt" ]]; then
+  nt="$resolved_target"
+fi
+
+# Send to target pane; do not fail entire flow if pane disappeared
+AGENTD_TARGET_PANE="$nt" "$script_dir/agentd-send" "[notify] job $token done rc=$rc timeout=$to" || true
+echo "NOTIFY to=$nt rc=$rc timeout=$to" >> "$run_dir/$token.exec.log" || true
+
+exit 0
+
