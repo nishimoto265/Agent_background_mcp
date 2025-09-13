@@ -319,8 +319,8 @@ def tmux_run(
                 session_name = SESSION
                 env["JOB_TARGET_PANE"] = f"{SESSION}:{CLI_WINDOW}.0"
 
-    # Hint job-run which session to create the window in
-    env.setdefault("JOB_SESSION", session_name)
+    # Do NOT force JOB_SESSION here; let job-run decide exec session
+    # based on AGENTD_EXEC_SESSION_MODE (default we set to 'self' below).
     # Execute job-run and capture token
     # Compute useful view commands before launching
     # Try to predict log path using the target pane's cwd
@@ -358,6 +358,12 @@ def tmux_run(
     inside_cmd = f"tmux select-window -t '{exec_session}:{token}'"
     outside_cmd = f"tmux attach -t '{exec_session}' \\; select-window -t '{exec_session}:{token}'"
     tail_cmd = f"tail -f '{log_path}'"
+
+    # Execution/session behavior: default to running in the caller's session (self)
+    env.setdefault("AGENTD_EXEC_SESSION_MODE", os.environ.get("AGENTD_EXEC_SESSION_MODE", "self"))
+    # Ensure notification goes back to the same pane we selected as target, unless overridden
+    if env.get("JOB_TARGET_PANE"):
+        env.setdefault("JOB_NOTIFY_PANE", env["JOB_TARGET_PANE"]) 
 
     # Launch the job in the background (non-blocking for the MCP tool)
     import subprocess as _sp
