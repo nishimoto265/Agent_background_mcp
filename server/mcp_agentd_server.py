@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-import asyncio
-import json
 import os
-import re
-import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import secrets
@@ -12,7 +8,11 @@ import datetime as _dt
 from mcp.server.fastmcp import FastMCP
 
 AGENTD_DIR = Path(os.environ.get("AGENTD_DIR", os.path.expanduser("~/.agentd")))
-LOG_DIR = AGENTD_DIR / "logs"
+# Prefer repo-local mcp_log, then env AGENTD_LOGDIR, then ~/.agentd/logs
+REPO_DIR = Path(__file__).resolve().parents[1]
+REPO_LOG_DIR = REPO_DIR / "mcp_log"
+ENV_LOG_DIR = Path(os.environ.get("AGENTD_LOGDIR", str(REPO_LOG_DIR)))
+HOME_LOG_DIR = AGENTD_DIR / "logs"
 SESSION = os.environ.get("AGENTD_SESSION", "agentd")
 CLI_WINDOW = os.environ.get("AGENTD_CLI_WINDOW", "cli")
 
@@ -33,24 +33,41 @@ def _job_rc_path(token: str) -> Path:
     return AGENTD_DIR / f"{token}.rc"
 
 
+def _candidate_log_dirs() -> List[Path]:
+    # Order: repo mcp_log -> env-provided -> ~/.agentd/logs
+    dirs = []
+    if REPO_LOG_DIR:
+        dirs.append(REPO_LOG_DIR)
+    if ENV_LOG_DIR and ENV_LOG_DIR != REPO_LOG_DIR:
+        dirs.append(ENV_LOG_DIR)
+    if HOME_LOG_DIR:
+        dirs.append(HOME_LOG_DIR)
+    return dirs
+
+
 def _job_log_path(token: str) -> Path:
-    return LOG_DIR / f"{token}.log"
+    for d in _candidate_log_dirs():
+        p = Path(d) / f"{token}.log"
+        if p.exists():
+            return p
+    # Fallback: default to repo-local mcp_log path (first in list)
+    base = _candidate_log_dirs()[0] if _candidate_log_dirs() else HOME_LOG_DIR
+    return Path(base) / f"{token}.log"
 
 
-def _shell_quote(s: str) -> str:
-    return shutil.quote(s)
+# (Removed) _shell_quote: not used.
 
 
 def _list_job_tokens() -> List[str]:
     if not AGENTD_DIR.exists():
         return []
-    toks = []
+    toks: List[str] = []
     for p in AGENTD_DIR.glob("*.rc"):
         toks.append(p.stem)
-    # Include logs without rc as well
-    if LOG_DIR.exists():
-        for p in LOG_DIR.glob("*.log"):
-            toks.append(p.stem)
+    # Include logs without rc as well across all known log dirs
+    for d in _candidate_log_dirs():
+        if Path(d).exists():
+            toks.extend([p.stem for p in Path(d).glob("*.log")])
     return sorted(set(toks))
 
 
@@ -128,47 +145,13 @@ def _detect_self_pane() -> Optional[str]:
 SELF_PANE = _detect_self_pane()
 
 
-def _ensure_bootstrap(session: Optional[str] = None, window: Optional[str] = None, cmd: Optional[str] = None) -> Optional[str]:
-    """Ensure a valid target pane is recorded. Returns target if available."""
-    if not _tmux_ok():
-        return None
-    saved = _read_target()
-    if saved and _tmux_pane_exists(saved):
-        return saved
-    boot = _bin("agentd-bootstrap")
-    if not boot.exists():
-        return saved
-    args = [str(boot)]
-    if session or SESSION:
-        args += ["-s", session or SESSION]
-    if window or CLI_WINDOW:
-        args += ["-w", window or CLI_WINDOW]
-    if cmd:
-        args += ["-c", cmd]
-    import subprocess
-    env = os.environ.copy()
-    env.setdefault("AGENTD_SESSION", session or SESSION)
-    try:
-        subprocess.run(args, check=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        return saved
-    return _read_target()
+# Removed unused bootstrap helper; pane targeting is resolved dynamically in tmux_run.
 
 
-def _self_session() -> Optional[str]:
-    if not SELF_PANE:
-        return None
-    # format: session:win.pane -> session
-    return SELF_PANE.split(":", 1)[0]
+# No direct use for self session aside from diagnostics; remove dead helper.
 
 
-def _session_cli_pane(session: str) -> str:
-    return f"{session}:{CLI_WINDOW}.0"
-
-
-def _cli_pane_exists(session: str) -> bool:
-    target = _session_cli_pane(session)
-    return _tmux_pane_exists(target)
+# Removed unused CLI pane helpers.
 
 
 def _auto_session() -> Optional[str]:
@@ -381,7 +364,9 @@ def tmux_run(
                 log_dir_guess = str(Path(cwd) / "mcp_log")
         except Exception:
             log_dir_guess = None
-    log_path = str(Path(log_dir_guess or str(LOG_DIR)) / f"{token}.log")
+    # Predict log path: prefer target pane's cwd/mcp_log; else repo mcp_log; else ~/.agentd/logs
+    base_log_dir = log_dir_guess or (str(REPO_LOG_DIR) if REPO_LOG_DIR else None) or str(HOME_LOG_DIR)
+    log_path = str(Path(base_log_dir) / f"{token}.log")
     # Determine execution session consistent with job-run (self|fixed|per_repo)
     exec_mode = env.get("AGENTD_EXEC_SESSION_MODE", "self")
     exec_session: str
@@ -453,7 +438,7 @@ def tmux_stop(token: str, remove_log: bool = False) -> dict:
 
     Args:
         token: job token (e.g., 'job-2025...')
-        remove_log: also delete ~/.agentd/logs/<token>.log if True
+        remove_log: also delete the job log from the active log dir if True
     Returns:
         {"token": str, "cleaned": bool}
     """

@@ -7,7 +7,7 @@ tmux上で長時間コマンドを非同期実行し、ジョブ終了を“実�
 - 進捗の可視化: ジョブは専用ウィンドウで実行。tmuxにアタッチすれば進行度をそのまま見られる。
 - 自動復帰通知: 終了時に実行元ペインへ完了メッセージ（Enter付き）を自動送信→エージェントが自動再開。
 - 誤配送ゼロ設計: Self（実行元ペイン）に固定して返送。セッション名や環境差に左右されない。
-- ログ/追跡性: 各ジョブのログと終了コードをホーム配下（`~/.agentd`）に保存。
+- ログ/追跡性: 各ジョブの終了コードは `~/.agentd/<token>.rc`、ログは既定でリポジトリ直下の `mcp_log/<token>.log`（環境により `AGENTD_LOGDIR`、最終フォールバックは `~/.agentd/logs`）。
 
 ## Requirements
 - tmux 3.x, Bash
@@ -85,5 +85,5 @@ MCP設定から「ローカルSTDIOサーバ」を追加:
 
 ## Notes（ログ/終了コード）
 - 終了コード: `~/.agentd/<token>.rc`
-- ログ: `~/.agentd/logs/<token>.log`
+- ログ: 既定はリポジトリ直下 `mcp_log/<token>.log`。`AGENTD_LOGDIR` を指定するとそのディレクトリを使用。フォールバックは `~/.agentd/logs/<token>.log`。
 - 宛先（Self）記録: `~/.agentd/<token>.target`

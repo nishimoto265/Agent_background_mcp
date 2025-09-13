@@ -7,8 +7,9 @@ usage() {
   cat <<USAGE
 usage: job-run "<command to run>"
   Runs the command in a new tmux window under session "$AGENTD_SESSION".
-  Streams output to ~/.agentd/logs/<token>.log, forwards [notify] lines
-  to agent-notify, and sends completion back to the original CLI pane.
+  Streams output to "$AGENTD_LOGDIR/<token>.log" (default: repo mcp_log),
+  forwards [notify] lines to agent-notify, and sends completion back to
+  the original CLI pane.
 
 env:
   AGENTD_SESSION   tmux session (default: agentd)
