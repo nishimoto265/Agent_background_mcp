@@ -271,6 +271,34 @@ def _active_pane_in_session(session: str) -> Optional[str]:
         return None
     return None
 
+def _shell_friendly_pane_in_session(session: str) -> Optional[str]:
+    """Return a pane in session likely running a shell (bash/zsh/fish/sh), else first pane.
+    Format: session:win.pane
+    """
+    if not _tmux_ok():
+        return None
+    import subprocess
+    try:
+        out = subprocess.run([
+            "tmux", "list-panes", "-t", session, "-F", "#{window_index}.#{pane_index} #{pane_current_command}"
+        ], capture_output=True, text=True, check=True)
+        shells = {"bash","zsh","fish","sh","nu"}
+        first = None
+        for line in out.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            idx, cmd = line.split(maxsplit=1)
+            if first is None:
+                first = idx
+            if cmd in shells:
+                return f"{session}:{idx}"
+        if first:
+            return f"{session}:{first}"
+    except Exception:
+        return None
+    return None
+
 
 @app.tool()
 def tmux_run(
@@ -380,9 +408,20 @@ def tmux_run(
 
     # Execution/session behavior: default to running in the caller's session (self)
     env.setdefault("AGENTD_EXEC_SESSION_MODE", os.environ.get("AGENTD_EXEC_SESSION_MODE", "self"))
-    # Ensure notification goes back to the same pane we selected as target, unless overridden
+    # Prefer to notify a shell-friendly pane in the same session if the active pane looks non-shell
     if env.get("JOB_TARGET_PANE"):
-        env.setdefault("JOB_NOTIFY_PANE", env["JOB_TARGET_PANE"]) 
+        try:
+            sess = env["JOB_TARGET_PANE"].split(":",1)[0]
+            # probe current command of target pane
+            import subprocess as _sp
+            cmd = _sp.run(["tmux","display-message","-p","-t",env["JOB_TARGET_PANE"],"#{pane_current_command}"],capture_output=True,text=True,check=True).stdout.strip()
+            if cmd not in {"bash","zsh","fish","sh","nu"}:
+                alt = _shell_friendly_pane_in_session(sess)
+                env.setdefault("JOB_NOTIFY_PANE", alt or env["JOB_TARGET_PANE"]) 
+            else:
+                env.setdefault("JOB_NOTIFY_PANE", env["JOB_TARGET_PANE"]) 
+        except Exception:
+            env.setdefault("JOB_NOTIFY_PANE", env["JOB_TARGET_PANE"]) 
 
     # Launch the job in the background (non-blocking for the MCP tool)
     import subprocess as _sp
