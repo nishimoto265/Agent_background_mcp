@@ -137,6 +137,10 @@ done
 if [[ -n "$win_idx" ]]; then echo "$win_idx" >"$AGENTD_DIR/$token.win"; fi
 if [[ -n "$win_id" ]]; then echo "$win_id" >"$AGENTD_DIR/$token.wid"; fi
 if [[ -n "$pane_id" ]]; then echo "$pane_id" >"$AGENTD_DIR/$token.pid"; fi
+if [[ -n "$win_id" ]]; then
+  # Keep this job window visible after command exits (per-window remain-on-exit)
+  tmux set-window-option -t "$win_id" remain-on-exit on >/dev/null 2>&1 || true
+fi
 
 # Attach logging/notify pipe (idempotent with -o) to the pane id; retry briefly to avoid race
 FILTER_CMD="$SCRIPT_DIR/agentd-filter"
