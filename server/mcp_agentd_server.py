@@ -408,19 +408,18 @@ def tmux_run(
 
     # Execution/session behavior: default to running in the caller's session (self)
     env.setdefault("AGENTD_EXEC_SESSION_MODE", os.environ.get("AGENTD_EXEC_SESSION_MODE", "self"))
-    # Prefer to notify a shell-friendly pane in the same session if the active pane looks non-shell
+    # By default, always notify the initiating (agent) pane.
+    # If AGENTD_NOTIFY_FORCE_SHELL=1, reroute to a shell-friendly pane in the same session.
     if env.get("JOB_TARGET_PANE"):
-        try:
-            sess = env["JOB_TARGET_PANE"].split(":",1)[0]
-            # probe current command of target pane
-            import subprocess as _sp
-            cmd = _sp.run(["tmux","display-message","-p","-t",env["JOB_TARGET_PANE"],"#{pane_current_command}"],capture_output=True,text=True,check=True).stdout.strip()
-            if cmd not in {"bash","zsh","fish","sh","nu"}:
+        force_shell = env.get("AGENTD_NOTIFY_FORCE_SHELL", os.environ.get("AGENTD_NOTIFY_FORCE_SHELL", "0"))
+        if force_shell == "1":
+            try:
+                sess = env["JOB_TARGET_PANE"].split(":",1)[0]
                 alt = _shell_friendly_pane_in_session(sess)
                 env.setdefault("JOB_NOTIFY_PANE", alt or env["JOB_TARGET_PANE"]) 
-            else:
+            except Exception:
                 env.setdefault("JOB_NOTIFY_PANE", env["JOB_TARGET_PANE"]) 
-        except Exception:
+        else:
             env.setdefault("JOB_NOTIFY_PANE", env["JOB_TARGET_PANE"]) 
 
     # Launch the job in the background (non-blocking for the MCP tool)
