@@ -53,8 +53,6 @@ rc=0
     bash -lc "\$cmd_string"
   fi
 } || rc=\$?
-# Emit a [notify] line into the job output so agentd-filter can forward reliably
-echo "[notify] job $token done rc=\$rc timeout=0 (runner)"
 echo "\$rc" > "\$rc_file"
 __TMUX_BIN__ wait-for -S "\$token"
 exit "\$rc"
