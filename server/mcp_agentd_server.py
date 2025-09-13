@@ -251,6 +251,26 @@ def _auto_session() -> Optional[str]:
         pass
     return None
 
+def _active_pane_in_session(session: str) -> Optional[str]:
+    if not _tmux_ok():
+        return None
+    import subprocess
+    try:
+        out = subprocess.run([
+            "tmux", "list-panes", "-t", session, "-F", "#{window_index}.#{pane_index} #{?pane_active,1,0}"
+        ], capture_output=True, text=True, check=True)
+        lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
+        for l in lines:
+            idx, active = l.split()
+            if active == "1":
+                return f"{session}:{idx}"
+        if lines:
+            idx = lines[0].split()[0]
+            return f"{session}:{idx}"
+    except Exception:
+        return None
+    return None
+
 
 @app.tool()
 def tmux_run(
@@ -302,22 +322,21 @@ def tmux_run(
         session_name = session
         env["JOB_TARGET_PANE"] = f"{session}:{w}.{p}"
     else:
+        # Prefer the active pane of the most recently active session
+        pane_target = None
         saved = _read_target()
         if saved and _tmux_pane_exists(saved):
-            env["JOB_TARGET_PANE"] = saved
-            session_name = saved.split(":", 1)[0]
+            pane_target = saved
         else:
             auto = _auto_session()
             if auto:
-                session_name = auto
-                env["JOB_TARGET_PANE"] = f"{auto}:{CLI_WINDOW}.0"
-            elif SELF_PANE:
-                session_name = SELF_PANE.split(":", 1)[0]
-                env["JOB_TARGET_PANE"] = SELF_PANE
-            else:
-                # Fall back to default session name; job-run will create if needed
-                session_name = SESSION
-                env["JOB_TARGET_PANE"] = f"{SESSION}:{CLI_WINDOW}.0"
+                pane_target = _active_pane_in_session(auto)
+        if not pane_target and SELF_PANE:
+            pane_target = SELF_PANE
+        if not pane_target:
+            pane_target = f"{SESSION}:{CLI_WINDOW}.0"
+        env["JOB_TARGET_PANE"] = pane_target
+        session_name = pane_target.split(":", 1)[0]
 
     # Do NOT force JOB_SESSION here; let job-run decide exec session
     # based on AGENTD_EXEC_SESSION_MODE (default we set to 'self' below).
@@ -336,7 +355,7 @@ def tmux_run(
             log_dir_guess = None
     log_path = str(Path(log_dir_guess or str(LOG_DIR)) / f"{token}.log")
     # Determine execution session consistent with job-run (self|fixed|per_repo)
-    exec_mode = env.get("AGENTD_EXEC_SESSION_MODE", os.environ.get("AGENTD_EXEC_SESSION_MODE", "per_repo"))
+    exec_mode = env.get("AGENTD_EXEC_SESSION_MODE", "self")
     exec_session: str
     if exec_mode == "self":
         exec_session = session_name
