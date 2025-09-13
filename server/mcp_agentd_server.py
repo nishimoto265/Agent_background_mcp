@@ -278,8 +278,6 @@ def tmux_run(
     env = os.environ.copy()
     env.setdefault("AGENTD_SESSION", SESSION)
     # Do not force a global log dir here; job-run will prefer the target pane's cwd/mcp_log.
-    # Viewer session to safely attach without stealing the user's current shell
-    VIEW_SESSION = env.setdefault("AGENTD_VIEW_SESSION", os.environ.get("AGENTD_VIEW_SESSION", "agentview"))
     import subprocess
     # Pre-generate a token so we can surface it (and log commands) immediately
     ts = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -337,9 +335,28 @@ def tmux_run(
         except Exception:
             log_dir_guess = None
     log_path = str(Path(log_dir_guess or str(LOG_DIR)) / f"{token}.log")
-    # Prefer viewing via the dedicated viewer session (job window is linked there by job-run)
-    inside_cmd = f"tmux select-window -t '{VIEW_SESSION}:{token}'"
-    outside_cmd = f"tmux attach -t '{VIEW_SESSION}' \\; select-window -t '{VIEW_SESSION}:{token}'"
+    # Determine execution session consistent with job-run (self|fixed|per_repo)
+    exec_mode = env.get("AGENTD_EXEC_SESSION_MODE", os.environ.get("AGENTD_EXEC_SESSION_MODE", "per_repo"))
+    exec_session: str
+    if exec_mode == "self":
+        exec_session = session_name
+    elif exec_mode == "fixed":
+        exec_session = env.get("AGENTD_EXEC_SESSION", os.environ.get("AGENTD_EXEC_SESSION", "agentexec"))
+    else:
+        # per_repo (default): exec-<basename of pane cwd>
+        try:
+            if target_pane:
+                import subprocess as _sp
+                cwd = _sp.run(["tmux", "display-message", "-p", "-t", target_pane, "#{pane_current_path}"], capture_output=True, text=True, check=True).stdout.strip()
+                base = Path(cwd).name if cwd else "exec"
+            else:
+                base = "exec"
+        except Exception:
+            base = "exec"
+        exec_session = env.get("AGENTD_EXEC_SESSION", f"exec-{base}")
+
+    inside_cmd = f"tmux select-window -t '{exec_session}:{token}'"
+    outside_cmd = f"tmux attach -t '{exec_session}' \\; select-window -t '{exec_session}:{token}'"
     tail_cmd = f"tail -f '{log_path}'"
 
     # Launch the job in the background (non-blocking for the MCP tool)
@@ -355,7 +372,7 @@ def tmux_run(
     return {
         "token": token,
         "session": session_name,
-        "view_session": VIEW_SESSION,
+        "exec_session": exec_session,
         "target": env.get("JOB_TARGET_PANE"),
         "log_path": log_path,
         "attach": outside_cmd,

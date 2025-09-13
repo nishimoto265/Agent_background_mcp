@@ -86,18 +86,28 @@ fi
 target_file="$AGENTD_DIR/$token.target"
 if [[ -n "$resolved_target" ]]; then printf '%s\n' "$resolved_target" >"$target_file"; fi
 
-# Determine job session from target pane (session:win.pane) or fallback
+# Determine execution session according to mode (self|fixed|per_repo)
+# - self: use original session of resolved_target
+# - fixed: use AGENTD_EXEC_SESSION (default: agentexec)
+# - per_repo (default): exec-<basename of pane cwd>
+exec_mode=${AGENTD_EXEC_SESSION_MODE:-per_repo}
+pane_cwd=$(tmux display-message -p -t "$resolved_target" '#{pane_current_path}' 2>/dev/null || printf '%s' "$PWD")
+repo_base=$(basename -- "$pane_cwd")
 job_session=${JOB_SESSION:-}
 if [[ -z "$job_session" ]]; then
-  job_session=$(printf '%s' "$resolved_target" | awk -F: '{print $1}')
+  case "$exec_mode" in
+    self)
+      job_session=$(printf '%s' "$resolved_target" | awk -F: '{print $1}') ;;
+    fixed)
+      job_session=${AGENTD_EXEC_SESSION:-agentexec} ;;
+    per_repo|*)
+      job_session=${AGENTD_EXEC_SESSION:-exec-$repo_base} ;;
+  esac
 fi
-if [[ -z "$job_session" ]]; then
-  job_session="$AGENTD_SESSION"
-fi
+if [[ -z "$job_session" ]]; then job_session="$AGENTD_SESSION"; fi
 
 # Decide log directory based on target pane's current path if not explicitly set
 if [[ -z "${AGENTD_LOGDIR:-}" ]]; then
-  pane_cwd=$(tmux display-message -p -t "$resolved_target" '#{pane_current_path}' 2>/dev/null || printf '%s' "$PWD")
   AGENTD_LOGDIR="$pane_cwd/mcp_log"
 fi
 mkdir -p "$AGENTD_LOGDIR" 2>/dev/null || true
@@ -114,7 +124,7 @@ cmd_arg=$(printf '%q' "$cmd_string")
 rcf_arg=$(printf '%q' "$rc_file")
 tok_arg=$(printf '%q' "$token")
 sess_arg=$(printf '%q' "$job_session")
-tmux new-window -d -t "$job_session" -n "$token" "bash $launcher"
+tmux new-window -d -t "$job_session" -n "$token" -c "$pane_cwd" "bash $launcher"
 # Record window index and pane/window ids for reliable attach later
 win_idx=""; win_id=""; pane_id=""
 for i in 1 2 3 4 5; do
@@ -147,29 +157,12 @@ if [[ $pipe_ok -ne 1 ]]; then
   echo "PIPE_ATTACH_FAILED $token target=${pane_id:-$win_id} log=$log_file" >>"$run_dir/$token.exec.log"
 fi
 
-# Link the job window into a dedicated viewer session so users can attach there safely
-VIEW_SESSION=${AGENTD_VIEW_SESSION:-agentview}
-if ! tmux has-session -t "$VIEW_SESSION" 2>/dev/null; then
-  tmux new-session -d -s "$VIEW_SESSION" -n cli 'bash -lc "exec bash -i"'
-fi
-# Link using window-id to avoid name races; name the linked window as token
-if [[ -n "$win_id" ]]; then
-  tmux link-window -k -s "$win_id" -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || \
-  tmux link-window    -s "$win_id" -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || true
-  tmux set-window-option -t "$VIEW_SESSION:$token" remain-on-exit on >/dev/null 2>&1 || true
-fi
-
-# Additionally, spawn a viewer window that tails the job log (works even if link-window fails)
-if tmux list-windows -t "$VIEW_SESSION" -F '#{window_name}' 2>/dev/null | grep -Fxq "$token"; then
-  tmux kill-window -t "$VIEW_SESSION:$token" >/dev/null 2>&1 || true
-fi
-tmux new-window -d -t "$VIEW_SESSION" -n "$token" \
-  "bash -lc 'printf \"tailing %s\\n\" \"$log_file\"; i=0; while [ ! -s \"$log_file\" ] && [ \"$i\" -lt 50 ]; do sleep 0.1; i=$((i+1)); done; tail -n +1 -f \"$log_file\"'" >/dev/null 2>&1 || true
+# Viewer session is not used when executing in a dedicated execution session
 
 # 提示: 実行中のジョブ画面をすぐ見たい場合のtmuxコマンド（stderrに表示）
 {
-  echo "view (outside tmux): tmux attach -t '$VIEW_SESSION' \; select-window -t '$VIEW_SESSION:$token'"
-  echo "view (inside tmux):  tmux select-window -t '$VIEW_SESSION:$token'"
+  echo "view (outside tmux): tmux attach -t '$job_session' \; select-window -t '$job_session:$token'"
+  echo "view (inside tmux):  tmux select-window -t '$job_session:$token'"
 } >&2
 
 # Signal launcher that pipe is attached; safe to start the runner command
