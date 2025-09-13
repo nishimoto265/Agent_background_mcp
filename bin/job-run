@@ -185,7 +185,8 @@ tmux run-shell "sh -lc '
     tmux wait-for $token || to=1;
   fi;
   rc=255; test -f \"$rc_file\" && rc=\$(cat \"$rc_file\");
-  AGENTD_TARGET_PANE=\"$resolved_target\" \"$SCRIPT_DIR/agentd-send\" \"[notify] job $token done rc=\$rc timeout=\$to\"'
+  nt=\"${JOB_NOTIFY_PANE:-}\"; if [ -z \"$nt\" ]; then nt=\"$resolved_target\"; fi;
+  AGENTD_TARGET_PANE=\"$nt\" \"$SCRIPT_DIR/agentd-send\" \"[notify] job $token done rc=\$rc timeout=\$to\"'
 "
 
 echo "$token"

@@ -46,11 +46,16 @@ if [[ -z ${target} ]]; then
   exit 1
 fi
 
-# Ensure target exists; minimal best-effort: if session exists but window absent, create window
+# Ensure target exists unless strict mode
 if ! tmux list-panes -t "$target" >/dev/null 2>/dev/null; then
-  sess=${target%%:*}
-  if [[ -n "$sess" ]] && tmux has-session -t "$sess" 2>/dev/null; then
-    agentd_ensure_cli_window "$sess"
+  if [[ "${AGENTD_NOTIFY_STRICT:-0}" != "1" ]]; then
+    sess=${target%%:*}
+    if [[ -n "$sess" ]] && tmux has-session -t "$sess" 2>/dev/null; then
+      agentd_ensure_cli_window "$sess"
+    fi
+  else
+    echo "notify: target pane not found and strict mode is on: $target" >&2
+    exit 1
   fi
 fi
 
